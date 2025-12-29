@@ -1,0 +1,422 @@
+'use client';
+
+/* eslint-disable consistent-return */
+
+import Script from 'next/script';
+import { useRef, useState, useEffect, useCallback } from 'react';
+import { startDebugger } from 'remove-child-node-error-debugger';
+
+import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
+
+import { usePathname } from 'src/routes/hooks/use-pathname';
+
+import { usePopover } from 'src/components/custom-popover';
+
+startDebugger();
+
+// Supported Languages
+const LANGUAGES = [
+  { value: 'en', code: 'US' },
+  { value: 'bn', code: 'BD' },
+];
+
+export function GoogleTranslate() {
+  const popover = usePopover();
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [currentLang, setCurrentLang] = useState({ value: 'en', code: 'US' }); // Default to English
+  const googleTranslateElementRef = useRef(null);
+  const hiddenTranslateElementRef = useRef(null);
+  const observerRef = useRef(null);
+  const pathname = usePathname();
+
+  const [isLanguage, setIsLanguage] = useState(true);
+  // const bangla = { value: 'bn', code: 'BD' };
+  // const english = { value: 'en', code: 'US' };
+
+  // Get language initials
+
+  // const getLanguageInitials = (langValue) => {
+  //   if (langValue === 'zh-CN') return 'CN';
+  //   // console.log('langValue', langValue);
+  //   return langValue.substring(0, 2).toUpperCase();
+  // };
+
+  // Get the current language from cookie
+  const getCurrentTranslateLanguage = useCallback(() => {
+    const cookieMatch = document.cookie.match(/googtrans=([^;]*)/);
+    if (cookieMatch && cookieMatch[1]) {
+      const langPair = decodeURIComponent(cookieMatch[1]);
+      console.log("lang dekhaw",langPair);
+      const langCode = langPair.split('/')[2]; // Format is /auto/{langCode}
+
+      if (langCode && langCode !== 'en') {
+        return LANGUAGES.find((lang) => lang.value === langCode) || null;
+      }
+    }
+    return null;
+  }, []);
+
+  // Clear cookies properly
+  const clearTranslateCookies = useCallback(() => {
+    const domain = window.location.hostname;
+
+    // Only use root path to avoid multiple cookies on different paths
+    const domains = [
+      { path: '/', domain: '' },
+      { path: '/', domain },
+      { path: '/', domain: `.${domain}` },
+    ];
+
+    domains.forEach((d) => {
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${d.path}${d.domain ? `; domain=${d.domain}` : ''};`;
+    });
+  }, []);
+
+  // Set translate cookie
+  const setTranslateCookie = useCallback(
+    (langValue) => {
+      // Don't set a cookie for English (default language)
+      if (langValue === 'en') {
+        clearTranslateCookies();
+        return;
+      }
+
+      // Clear existing cookies first
+      clearTranslateCookies();
+
+      // Set cookie only at root path
+      const domain = window.location.hostname;
+      const langPair = `/auto/${langValue}`;
+
+      // For localhost
+      if (domain === 'localhost') {
+        document.cookie = `googtrans=${langPair}; path=/;`;
+      } else {
+        // For other domains, set with domain
+        document.cookie = `googtrans=${langPair}; path=/; domain=${domain};`;
+      }
+    },
+    [clearTranslateCookies]
+  );
+
+  // Hide Google Translate elements
+  const hideGoogleTranslateElements = useCallback(() => {
+    const elementsToHide = [
+      '#goog-gt-tt',
+      '.goog-te-banner-frame',
+      '.VIpgJd-ZVi9od-ORHb',
+      '.VIpgJd-suEOdc',
+      '.VIpgJd-ZVi9od-aZ2wEe',
+      '.VIpgJd-ZVi9od-l4eHX-hSRGPd',
+      '.goog-te-menu-frame',
+      '.goog-te-menu-value',
+      '.goog-te-gadget',
+      '.goog-te-combo',
+      '.VIpgJd-ZVi9od-ORHb-bN97Pc',
+      'body > .skiptranslate',
+      '.VIpgJd-yAWNEb-L7lbkb',
+    ];
+
+    elementsToHide.forEach((selector) => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach((el) => {
+        el.style.display = 'none';
+        el.style.visibility = 'hidden';
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
+      });
+    });
+
+    // Fix specific body styles that Google Translate adds
+    if (document.body) {
+      document.body.style.top = '';
+      document.body.classList.remove('VIpgJd-ZVi9od-ORHb');
+    }
+  }, []);
+
+  // Language management with route changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Check and set current language
+      const activeLang = getCurrentTranslateLanguage();
+
+      if (activeLang) {
+        setCurrentLang(activeLang);
+      } else {
+        clearTranslateCookies();
+        setCurrentLang({ value: 'en', code: 'US' }); // Ensure English is set as default
+      }
+
+      // Hide Google elements (handles both initial load and route changes)
+      const timeoutId = setTimeout(() => {
+        hideGoogleTranslateElements();
+      }, 200);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [pathname, hideGoogleTranslateElements, getCurrentTranslateLanguage, clearTranslateCookies]);
+
+  // Language change handler
+  const handleChangeLang = useCallback(
+    (langValue) => {
+      const selectedLang = LANGUAGES.find((lang) => lang.value === langValue);
+      if (!selectedLang) return;
+
+      setCurrentLang(selectedLang);
+      popover.onClose();
+
+      // Always set the cookie for the selected language
+      setTranslateCookie(langValue);
+      // console.log('langTop', langValue);
+
+      if (window.google?.translate?.TranslateElement) {
+        // For English, clear translation and reload
+        // if (langValue === 'en') {
+        //   clearTranslateCookies();
+        //   // setTranslateCookie(langValue);
+        //   window.location.reload();
+        //   return;
+        // }
+
+        if (langValue === 'en') {
+          clearTranslateCookies();
+          setTranslateCookie('en');
+
+          const forceEnglish = () => {
+            const selectElement = document.querySelector('.goog-te-combo');
+            if (selectElement) {
+              selectElement.value = 'en';
+              selectElement.dispatchEvent(new Event('change'));
+              setTimeout(() => window.location.reload(), 300);
+            } else {
+              setTimeout(forceEnglish, 100);
+            }
+          };
+
+          forceEnglish();
+          return;
+        }
+
+        // *********************************************************
+
+        // ********************************************************************* */
+
+        // For other languages, trigger Google Translate
+        const tryChange = () => {
+          const selectElement = document.querySelector('.goog-te-combo');
+          // console.log(selectElement);
+          if (selectElement) {
+            if (selectElement.value !== langValue) {
+              selectElement.value = langValue;
+              selectElement.dispatchEvent(new Event('change'));
+            }
+          } else {
+            // Retry if the widget isn't ready yet
+            setTimeout(tryChange, 100);
+          }
+        };
+        tryChange();
+
+        // Hide Google Translate UI after a short delay
+        setTimeout(hideGoogleTranslateElements, 300);
+      }
+    },
+    [clearTranslateCookies, setTranslateCookie, popover, hideGoogleTranslateElements]
+  );
+
+  const handleToggle = (lang) => {
+    setIsLanguage(!isLanguage);
+
+    if (lang === 'bn') {
+      // setCurrentLang({ value: 'bn', code: 'BD' });
+      handleChangeLang(lang);
+      // handleChangeLang('en');
+    } else if (lang === 'en') {
+      // setCurrentLang({ value: 'en', code: 'US' });
+      handleChangeLang(lang);
+    }
+  };
+
+  // Initialize Google Translate when script loads
+  useEffect(() => {
+    if (!scriptLoaded) return;
+
+    // Initialize Google Translate with standard options
+    window.googleTranslateElementInit = () => {
+      if (!window.google?.translate) {
+        console.error('Google Translate API not available');
+        return;
+      }
+
+      try {
+        // Create the translate element with Google's default UI but hide it
+        googleTranslateElementRef.current = new window.google.translate.TranslateElement(
+          {
+            pageLanguage: 'en',
+            includedLanguages: LANGUAGES.map((lang) => lang.value).join(','),
+            autoDisplay: false,
+            layout: window.google.translate.TranslateElement.InlineLayout.HORIZONTAL,
+          },
+          'hidden_google_translate_element'
+        );
+
+        // Add event listener to hide attribution after selection
+        if (observerRef.current) {
+          observerRef.current.disconnect();
+        }
+
+        observerRef.current = new MutationObserver(() => {
+          hideGoogleTranslateElements();
+        });
+
+        observerRef.current.observe(document.body, {
+          childList: true,
+          subtree: true,
+        });
+
+        // Check if a language is already set in the cookie after initialization
+        const activeLang = getCurrentTranslateLanguage();
+        if (activeLang) {
+          setCurrentLang(activeLang);
+        }
+
+        setTimeout(hideGoogleTranslateElements, 100);
+      } catch (e) {
+        console.error('Failed to initialize Google Translate:', e);
+      }
+    };
+
+    // Inject styles to hide Google's UI elements
+    const style = document.createElement('style');
+    style.innerHTML = `
+      body > .skiptranslate {
+        display: none !important;
+      }
+
+      body {
+        top: 0px !important;
+        position: static !important;
+      }
+
+      .goog-te-banner-frame,
+      .goog-te-balloon-frame,
+      #goog-gt-tt,
+      .goog-tooltip,
+      .goog-tooltip:hover,
+      iframe[id^="google_translate_element"],
+      iframe.skiptranslate,
+      .VIpgJd-ZVi9od-ORHb {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        position: absolute !important;
+        top: -9999px !important;
+        left: -9999px !important;
+        height: 0 !important;
+        width: 0 !important;
+        transform: scale(0) !important;
+      }
+
+      .VIpgJd-ZVi9od-ORHb-OEVmcd,
+      .VIpgJd-ZVi9od-aZ2wEe,
+      .VIpgJd-ZVi9od-aZ2wEe-OiiCO,
+      .VIpgJd-ZVi9od-aZ2wEe-OiiCO-SzrMNb,
+      .VIpgJd-ZVi9od-l4eHX-hSRGPd {
+        display: none !important;
+        visibility: hidden !important;
+      }
+
+      #hidden_google_translate_element {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        visibility: hidden;
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Run immediately and set up observer
+    hideGoogleTranslateElements();
+
+    // Call init if Google's API is already loaded
+    if (window.google?.translate?.TranslateElement) {
+      window.googleTranslateElementInit();
+    }
+
+    return () => {
+      // Safe cleanup
+      if (style && style.parentNode && style.parentNode.contains(style)) {
+        style.parentNode.removeChild(style);
+      }
+
+      // Properly disconnect observer
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+
+      delete window.googleTranslateElementInit;
+    };
+  }, [scriptLoaded, getCurrentTranslateLanguage, hideGoogleTranslateElements]);
+
+  const handleScriptLoad = () => {
+    setScriptLoaded(true);
+  };
+
+  const handleScriptError = () => {
+    console.error('Google Translate script failed to load.');
+  };
+
+  return (
+    <>
+      <IconButton
+        onClick={() => handleToggle(isLanguage ? 'bn' : 'en')}
+        sx={{
+          // p: 0.5,
+          // width: 60,
+          // height: 40,
+          borderRadius: 1,
+          ...(popover.open && { bgcolor: 'action.selected' }),
+        }}
+      >
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: 'text.primary' }}>
+          <Typography
+            translate="no"
+            onClick={(e) => handleToggle(e.target.value)}
+            variant="subtitle2"
+          >
+            {currentLang?.value === 'en' ? 'বাংলা' : 'English'}
+          </Typography>
+          {/* <Iconify
+            icon="eva:arrow-ios-downward-fill"
+            width={16}
+            sx={{
+              ml: 0.5,
+              transition: 'transform 0.2s',
+              ...(popover.open && { transform: 'rotate(180deg)' }),
+            }}
+          /> */}
+        </Stack>
+      </IconButton>
+
+      <Script
+        src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
+        strategy="lazyOnload"
+        onLoad={handleScriptLoad}
+        onError={handleScriptError}
+      />
+
+      {/* Hidden element for Google Translate functionality */}
+      <Box
+        id="hidden_google_translate_element"
+        ref={hiddenTranslateElementRef}
+        sx={{ display: 'none' }}
+      />
+    </>
+  );
+}
