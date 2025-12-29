@@ -1,0 +1,37 @@
+'use client';
+
+import { usePathname, useSelectedLayoutSegment } from 'next/navigation';
+import { Box } from '@mui/material';
+
+import AppNavbar from 'src/components/navbar/AppNavbar';
+import Footer from '../../components/Footer/Footer';
+
+export default function ConditionalLayout({ children }) {
+  const pathname = usePathname();
+  const segment = useSelectedLayoutSegment();
+
+  // language / base slice (as you already use)
+  const slice = pathname.split('/').slice(0, 2).join('/');
+
+  // auth & dashboard routes
+  const signIn = `${slice}/auth/jwt/sign-in/`;
+  const signUp = `${slice}/auth/jwt/sign-up/`;
+  const dashboard = `${slice}/dashboard/`;
+
+  // detect not-found page
+  const isNotFound = segment === null;
+
+  // final condition
+  const shouldHideLayout =
+    isNotFound || pathname === signIn || pathname === signUp || pathname.startsWith(dashboard);
+
+  return (
+    <>
+      {!shouldHideLayout && <AppNavbar slice={slice} />}
+
+      <Box sx={{ minHeight: '100dvh' }}>{children}</Box>
+
+      {!shouldHideLayout && <Footer />}
+    </>
+  );
+}
